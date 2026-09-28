@@ -1,7 +1,7 @@
-import { io } from 'socket.io-client';
-import { useAuthStore } from '../store/authStore.js';
+import { io } from "socket.io-client";
+import { useAuthStore } from "../store/authStore.js";
 
-const SOCKET_URL = 'https://real-estate-backend-n7h1.onrender.com'
+const SOCKET_URL = "https://prop-ai-whatsapp-chatbot.onrender.com";
 
 let socket = null;
 
