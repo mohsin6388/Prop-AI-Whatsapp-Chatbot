@@ -842,7 +842,7 @@ const logger = require("../../utils/logger");
 const HISTORY_LIMIT = 12;
 
 /**
- * Detect whether customer is asking for OTHER properties
+ * Detect whether customer is asking for other properties
  * instead of continuing with the currently discussed project.
  */
 function isAskingForOtherProperties(text = "") {
@@ -875,7 +875,7 @@ function isAskingForOtherProperties(text = "") {
 }
 
 /**
- * Detect whether customer is asking for ALL available properties.
+ * Detect whether customer is asking for all available properties.
  */
 function isAskingForAllProperties(text = "") {
   const value = String(text).trim().toLowerCase();
@@ -909,7 +909,7 @@ function isAskingForAllProperties(text = "") {
 }
 
 /**
- * Detect whether customer is asking about a specific property/project.
+ * Detect whether customer is asking about a specific project.
  */
 function isSpecificPropertyQuestion(text = "") {
   const value = String(text).trim().toLowerCase();
@@ -940,6 +940,94 @@ function isSpecificPropertyQuestion(text = "") {
   ];
 
   return patterns.some((pattern) => value.includes(pattern));
+}
+
+// ---------------------------------------------------------------------------
+// Per-conversation debounce / scheduling
+// ---------------------------------------------------------------------------
+
+const REPLY_DEBOUNCE_MS = parseInt(
+  process.env.AI_REPLY_DEBOUNCE_MS || "3000",
+  10,
+);
+
+const turnState = new Map();
+
+function scheduleInbound(conversationId, delayMs = REPLY_DEBOUNCE_MS) {
+  const id = String(conversationId);
+
+  const state = turnState.get(id) || {
+    timer: null,
+    running: false,
+    rerun: false,
+  };
+
+  if (state.timer) {
+    clearTimeout(state.timer);
+  }
+
+  state.timer = setTimeout(
+    async () => {
+      state.timer = null;
+
+      if (state.running) {
+        state.rerun = true;
+        return;
+      }
+
+      state.running = true;
+
+      try {
+        const conversation = await Conversation.findById(id);
+
+        if (!conversation) {
+          return;
+        }
+
+        const lead = await Lead.findById(conversation.leadId);
+
+        if (!lead) {
+          return;
+        }
+
+        const message = await Message.findOne({
+          conversationId: id,
+        })
+          .sort({
+            timestamp: -1,
+          })
+          .lean();
+
+        if (!message || message.direction !== "inbound") {
+          return;
+        }
+
+        await handleInbound({
+          conversation,
+          lead,
+          message,
+        });
+      } catch (err) {
+        logger.error(`[ai] Scheduled conversation turn failed for ${id}`, {
+          error: err.message,
+          stack: err.stack,
+        });
+      } finally {
+        state.running = false;
+
+        if (state.rerun) {
+          state.rerun = false;
+
+          scheduleInbound(id, 500);
+        } else if (!state.timer) {
+          turnState.delete(id);
+        }
+      }
+    },
+    Math.max(0, Number(delayMs) || 0),
+  );
+
+  turnState.set(id, state);
 }
 
 /**
@@ -989,7 +1077,9 @@ async function handleInbound({ conversation, lead, message }) {
   const recentMessages = await Message.find({
     conversationId: conversation._id,
   })
-    .sort({ timestamp: -1 })
+    .sort({
+      timestamp: -1,
+    })
     .limit(HISTORY_LIMIT)
     .lean();
 
@@ -1008,10 +1098,6 @@ async function handleInbound({ conversation, lead, message }) {
       "",
   ).trim();
 
-  // ---------------------------------------------------------
-  // CUSTOMER INTENT CHECKS
-  // ---------------------------------------------------------
-
   const asksForOtherProperties = isAskingForOtherProperties(
     currentCustomerMessage,
   );
@@ -1028,22 +1114,6 @@ async function handleInbound({ conversation, lead, message }) {
 
   const requirements = conversation.collectedRequirements || {};
 
-  /**
-   * If customer asks:
-   *
-   * "Sunflower ke alawa koi property hai?"
-   *
-   * then old projectName must NOT remain as the active
-   * property filter.
-   *
-   * If customer asks:
-   *
-   * "Aapke paas kaun kaun si property hai?"
-   *
-   * then previous budget/BHK/location/project filters
-   * should not restrict inventory search.
-   */
-
   const ignoreProjectFilter = asksForOtherProperties || asksForAllProperties;
 
   const ignoreRequirementFilters = asksForAllProperties;
@@ -1056,21 +1126,16 @@ async function handleInbound({ conversation, lead, message }) {
 
   try {
     candidateProperties = await matchProperties({
-      // Keep current project unless customer asks
-      // for other/all properties.
       projectName: !ignoreProjectFilter ? requirements.projectName : undefined,
 
-      // City
       city: !ignoreRequirementFilters
         ? requirements.city || lead.city
         : undefined,
 
-      // Location
       location: !ignoreRequirementFilters
         ? requirements.location || lead.location
         : undefined,
 
-      // Budget
       budgetMin: !ignoreRequirementFilters
         ? (requirements.budgetMin ?? lead.budgetMin)
         : undefined,
@@ -1079,51 +1144,36 @@ async function handleInbound({ conversation, lead, message }) {
         ? (requirements.budgetMax ?? lead.budgetMax)
         : undefined,
 
-      // BHK
       bhk: !ignoreRequirementFilters ? requirements.bhk : undefined,
 
-      // Property Type
       propertyType: !ignoreRequirementFilters
         ? requirements.propertyType
         : undefined,
 
-      // Size
       sizeSqft: !ignoreRequirementFilters ? requirements.sizeSqft : undefined,
 
-      // Amenities
       amenities: !ignoreRequirementFilters ? requirements.amenities : undefined,
 
-      // Parking
       parking: !ignoreRequirementFilters ? requirements.parking : undefined,
 
-      // RERA
       reraNumber: !ignoreRequirementFilters
         ? requirements.reraNumber
         : undefined,
 
-      // Nearby Metro
       nearbyMetro: !ignoreRequirementFilters
         ? requirements.nearbyMetro
         : undefined,
 
-      // Nearby School
       nearbySchool: !ignoreRequirementFilters
         ? requirements.nearbySchool
         : undefined,
 
-      // Nearby Hospital
       nearbyHospital: !ignoreRequirementFilters
         ? requirements.nearbyHospital
         : undefined,
 
-      // Current customer message
       searchText: currentCustomerMessage,
 
-      // IMPORTANT:
-      // When customer asks:
-      // "Sunflower ke alawa koi property hai?"
-      //
-      // exclude current project.
       excludeProjectName: asksForOtherProperties
         ? requirements.projectName
         : undefined,
@@ -1137,7 +1187,7 @@ async function handleInbound({ conversation, lead, message }) {
   }
 
   // ---------------------------------------------------------
-  // DEBUG LOG
+  // PROPERTY MATCHING DEBUG LOG
   // ---------------------------------------------------------
 
   logger.info(`[ai] Property matching context for lead ${lead._id}`, {
@@ -1155,9 +1205,13 @@ async function handleInbound({ conversation, lead, message }) {
 
     candidateProjects: candidateProperties.map((property) => ({
       id: property._id,
+
       projectName: property.projectName,
+
       city: property.city,
+
       location: property.location,
+
       bhk: property.bhk,
     })),
   });
@@ -1233,7 +1287,7 @@ async function handleInbound({ conversation, lead, message }) {
   }
 
   // ---------------------------------------------------------
-  // REFERRAL
+  // REFERRAL / MONICA HANDOFF
   // ---------------------------------------------------------
 
   let outboundText = parsed.reply;
@@ -1436,12 +1490,13 @@ async function handleInbound({ conversation, lead, message }) {
 }
 
 /**
- * Sends the very first outbound message.
+ * Sends the very first outbound WhatsApp message.
  */
 async function startConversation({ lead, conversation }) {
   if (conversation.status !== "ai_active") {
     return {
       skipped: true,
+
       reason: "not_ai_active",
     };
   }
@@ -1455,6 +1510,7 @@ async function startConversation({ lead, conversation }) {
   if (alreadyStarted) {
     return {
       skipped: true,
+
       reason: "already_started",
     };
   }
@@ -1474,6 +1530,7 @@ async function startConversation({ lead, conversation }) {
   if (settings.aiPaused || !settings.autoReplyEnabled) {
     return {
       skipped: true,
+
       reason: "ai_paused",
     };
   }
@@ -1481,6 +1538,7 @@ async function startConversation({ lead, conversation }) {
   if (settings.whatsappDisconnected) {
     return {
       skipped: true,
+
       reason: "whatsapp_disconnected",
     };
   }
@@ -1634,6 +1692,7 @@ async function startConversation({ lead, conversation }) {
 
   return {
     sent: true,
+
     usedTemplate,
   };
 }
@@ -1784,6 +1843,7 @@ async function createSiteVisit({ lead, conversation, date, time, property }) {
     {
       _id: lead._id,
     },
+
     {
       $set: {
         status: "site_visit",
@@ -1879,6 +1939,7 @@ async function createSiteVisit({ lead, conversation, date, time, property }) {
 
 module.exports = {
   handleInbound,
+  scheduleInbound,
   createSiteVisit,
   startConversation,
   catchUpPendingConversations,
