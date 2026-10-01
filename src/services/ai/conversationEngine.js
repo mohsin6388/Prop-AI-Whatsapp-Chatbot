@@ -34,7 +34,10 @@ const HISTORY_LIMIT = parseInt(process.env.AI_HISTORY_LIMIT || "20", 10);
 // chahiye", "noida me"). We wait this long after the LAST message before
 // replying, so Monica answers once, with all of it in mind, instead of
 // firing 3 separate (and often contradictory) replies.
-const REPLY_DEBOUNCE_MS = parseInt(process.env.AI_REPLY_DEBOUNCE_MS || "3000", 10);
+const REPLY_DEBOUNCE_MS = parseInt(
+  process.env.AI_REPLY_DEBOUNCE_MS || "3000",
+  10,
+);
 
 // Sent when Gemini is down / out of quota after all retries, so the customer
 // is never left on "seen". Set AI_FALLBACK_REPLY=off to disable.
@@ -57,7 +60,11 @@ const lastFallbackAt = new Map(); // conversationId -> ms
 
 function scheduleInbound(conversationId, delayMs = REPLY_DEBOUNCE_MS) {
   const id = String(conversationId);
-  const state = turnState.get(id) || { timer: null, running: false, rerun: false };
+  const state = turnState.get(id) || {
+    timer: null,
+    running: false,
+    rerun: false,
+  };
   if (state.timer) clearTimeout(state.timer);
   state.timer = setTimeout(() => runTurn(id), delayMs);
   turnState.set(id, state);
@@ -105,7 +112,10 @@ async function handleInbound({ conversation }) {
 function isPlaceholderName(name, phone) {
   if (!name) return true;
   const digits = String(phone || "").replace(/\D/g, "");
-  return /^whatsapp\s*\+?\d+$/i.test(name.trim()) || (digits && name.replace(/\D/g, "") === digits);
+  return (
+    /^whatsapp\s*\+?\d+$/i.test(name.trim()) ||
+    (digits && name.replace(/\D/g, "") === digits)
+  );
 }
 
 function buildRequirementsSummary(r) {
@@ -135,7 +145,9 @@ async function processTurn(conversationId) {
   if (settings.aiPaused || !settings.autoReplyEnabled) return;
   if (settings.whatsappDisconnected) return;
 
-  const recentMessages = await Message.find({ conversationId: conversation._id })
+  const recentMessages = await Message.find({
+    conversationId: conversation._id,
+  })
     .sort({ timestamp: -1, _id: -1 })
     .limit(HISTORY_LIMIT)
     .lean();
@@ -148,7 +160,9 @@ async function processTurn(conversationId) {
 
   const apiKey = await settingsService.getGeminiKey();
   if (!apiKey) {
-    logger.warn(`[ai] No Gemini API key configured — skipping AI reply for lead ${lead._id}`);
+    logger.warn(
+      `[ai] No Gemini API key configured — skipping AI reply for lead ${lead._id}`,
+    );
     await notifyOwner(conversation, lead, {
       type: "whatsapp_send_failed",
       title: `AI could not reply to ${lead.name || lead.phone}`,
@@ -158,7 +172,7 @@ async function processTurn(conversationId) {
   }
 
   const requirements = conversation.collectedRequirements
-    ? (conversation.toObject().collectedRequirements || {})
+    ? conversation.toObject().collectedRequirements || {}
     : {};
 
   const candidateProperties = await matchProperties({
@@ -167,13 +181,17 @@ async function processTurn(conversationId) {
     budgetMin: requirements.budgetMin ?? lead.budgetMin,
     budgetMax: requirements.budgetMax ?? lead.budgetMax,
     bhk: requirements.bhk,
-    amenities: requirements.amenities || [],
+    propertyType: requirements.propertyType,
+    amenities: requirements.amenities,
   });
 
   const referralEnabled = settings.referral?.enabled ?? env.referral.enabled;
-  const referralPersonName = settings.referral?.personName || env.referral.personName;
+  const referralPersonName =
+    settings.referral?.personName || env.referral.personName;
   const referralContactNumber =
-    settings.referral?.contactNumber || env.referral.contactNumber || DEFAULT_REFERRAL_NUMBER;
+    settings.referral?.contactNumber ||
+    env.referral.contactNumber ||
+    DEFAULT_REFERRAL_NUMBER;
   const timezone = env.googleCalendar.timezone;
 
   const systemInstruction = buildSystemInstruction({
@@ -183,7 +201,9 @@ async function processTurn(conversationId) {
     matchedProperties: candidateProperties,
     // Referral switched off in Settings -> tell the prompt the offer is
     // already done, so Monica never asks it.
-    referralStatus: referralEnabled ? conversation.referralStatus || "none" : "declined",
+    referralStatus: referralEnabled
+      ? conversation.referralStatus || "none"
+      : "declined",
     referralPersonName,
     referralContactNumber,
     timezone,
@@ -198,7 +218,9 @@ async function processTurn(conversationId) {
       responseSchema: REPLY_RESPONSE_SCHEMA,
     });
   } catch (err) {
-    logger.error(`[ai] Gemini reply generation failed for lead ${lead._id}`, { error: err.message });
+    logger.error(`[ai] Gemini reply generation failed for lead ${lead._id}`, {
+      error: err.message,
+    });
     await sendFallbackReply({ conversation, lead });
     return;
   }
@@ -212,11 +234,16 @@ async function processTurn(conversationId) {
 
   // Re-check right before sending: the broker may have pressed "Take over"
   // while Gemini was thinking.
-  const fresh = await Conversation.findById(conversation._id).select("status").lean();
+  const fresh = await Conversation.findById(conversation._id)
+    .select("status")
+    .lean();
   if (!fresh || fresh.status !== "ai_active") return;
 
   // ---- Remember what we learned (never overwrite known facts with blanks) ----
-  const mergedRequirements = mergeRequirements(requirements, ai.extractedRequirements);
+  const mergedRequirements = mergeRequirements(
+    requirements,
+    ai.extractedRequirements,
+  );
   conversation.collectedRequirements = mergedRequirements;
   conversation.lastIntent = ai.intent;
   conversation.lastSentiment = ai.sentiment;
@@ -229,13 +256,22 @@ async function processTurn(conversationId) {
 
   // ---- Referral / "Monica as your assistant" offer state machine ----
   if (referralEnabled) {
-    if (conversation.referralStatus === "none" && ai.referralStage === "ask_now") {
+    if (
+      conversation.referralStatus === "none" &&
+      ai.referralStage === "ask_now"
+    ) {
       conversation.referralStatus = "asked";
       conversation.referralAskedAt = new Date();
-    } else if (conversation.referralStatus === "asked" && ai.referralStage === "accepted") {
+    } else if (
+      conversation.referralStatus === "asked" &&
+      ai.referralStage === "accepted"
+    ) {
       conversation.referralStatus = "accepted";
       conversation.referralRespondedAt = new Date();
-    } else if (conversation.referralStatus === "asked" && ai.referralStage === "declined") {
+    } else if (
+      conversation.referralStatus === "asked" &&
+      ai.referralStage === "declined"
+    ) {
       conversation.referralStatus = "declined";
       conversation.referralRespondedAt = new Date();
     }
@@ -246,14 +282,18 @@ async function processTurn(conversationId) {
   if (
     ai.name &&
     ai.name !== lead.name &&
-    (isPlaceholderName(lead.name, lead.phone) || (lead.whatsappProfileName && lead.name === lead.whatsappProfileName))
+    (isPlaceholderName(lead.name, lead.phone) ||
+      (lead.whatsappProfileName && lead.name === lead.whatsappProfileName))
   ) {
     leadUpdates.name = ai.name;
   }
   if (mergedRequirements.city) leadUpdates.city = mergedRequirements.city;
-  if (mergedRequirements.location) leadUpdates.location = mergedRequirements.location;
-  if (mergedRequirements.budgetMin != null) leadUpdates.budgetMin = mergedRequirements.budgetMin;
-  if (mergedRequirements.budgetMax != null) leadUpdates.budgetMax = mergedRequirements.budgetMax;
+  if (mergedRequirements.location)
+    leadUpdates.location = mergedRequirements.location;
+  if (mergedRequirements.budgetMin != null)
+    leadUpdates.budgetMin = mergedRequirements.budgetMin;
+  if (mergedRequirements.budgetMax != null)
+    leadUpdates.budgetMax = mergedRequirements.budgetMax;
   const summary = buildRequirementsSummary(mergedRequirements);
   if (summary && (!lead.requirements || lead.requirements.startsWith("AI: "))) {
     leadUpdates.requirements = `AI: ${summary}`;
@@ -267,7 +307,10 @@ async function processTurn(conversationId) {
   // ---- Send the reply ----
   let outbound;
   try {
-    const { messageId } = await metaWhatsappClient.sendToLead({ phone: lead.phone, text: ai.reply });
+    const { messageId } = await metaWhatsappClient.sendToLead({
+      phone: lead.phone,
+      text: ai.reply,
+    });
 
     outbound = await recordOutboundMessage({
       conversationId: conversation._id,
@@ -275,16 +318,20 @@ async function processTurn(conversationId) {
       text: ai.reply,
       sender: "ai",
       whatsappMessageId: messageId || null,
-      aiPrompt: process.env.AI_STORE_PROMPTS === "true" ? systemInstruction : null,
+      aiPrompt:
+        process.env.AI_STORE_PROMPTS === "true" ? systemInstruction : null,
       aiResponseRaw: result.parsed,
       intent: ai.intent,
       sentiment: ai.sentiment,
     });
   } catch (err) {
-    logger.error(`[ai] Failed to send AI reply for lead ${lead._id} via Meta WhatsApp Cloud API`, {
-      error: err.metaError || err.response?.data || err.message,
-      code: err.code,
-    });
+    logger.error(
+      `[ai] Failed to send AI reply for lead ${lead._id} via Meta WhatsApp Cloud API`,
+      {
+        error: err.metaError || err.response?.data || err.message,
+        code: err.code,
+      },
+    );
     await conversation.save(); // keep the requirements we just learned
     await notifyOwner(conversation, lead, {
       type: "whatsapp_send_failed",
@@ -331,8 +378,13 @@ async function processTurn(conversationId) {
   }
 
   // Lead scoring + follow-up planning runs as a separate Gemini pass, async.
-  analyzeConversationAsync({ leadId: lead._id, conversationId: conversation._id }).catch((err) =>
-    logger.error(`[ai] Async lead analysis failed for lead ${lead._id}`, { error: err.message }),
+  analyzeConversationAsync({
+    leadId: lead._id,
+    conversationId: conversation._id,
+  }).catch((err) =>
+    logger.error(`[ai] Async lead analysis failed for lead ${lead._id}`, {
+      error: err.message,
+    }),
   );
 }
 
@@ -340,7 +392,12 @@ function pickProperty(candidates, reference) {
   if (!candidates?.length) return undefined;
   if (reference) {
     const ref = reference.toLowerCase();
-    const hit = candidates.find((p) => p.projectName && (ref.includes(p.projectName.toLowerCase()) || p.projectName.toLowerCase().includes(ref)));
+    const hit = candidates.find(
+      (p) =>
+        p.projectName &&
+        (ref.includes(p.projectName.toLowerCase()) ||
+          p.projectName.toLowerCase().includes(ref)),
+    );
     if (hit) return hit;
   }
   return candidates[0];
@@ -381,7 +438,10 @@ async function sendFallbackReply({ conversation, lead }) {
   lastFallbackAt.set(id, Date.now());
 
   try {
-    const { messageId } = await metaWhatsappClient.sendToLead({ phone: lead.phone, text: FALLBACK_REPLY });
+    const { messageId } = await metaWhatsappClient.sendToLead({
+      phone: lead.phone,
+      text: FALLBACK_REPLY,
+    });
     const outbound = await recordOutboundMessage({
       conversationId: conversation._id,
       leadId: lead._id,
@@ -395,7 +455,9 @@ async function sendFallbackReply({ conversation, lead }) {
       message: outbound,
     });
   } catch (err) {
-    logger.error(`[ai] Fallback reply also failed for lead ${lead._id}`, { error: err.message });
+    logger.error(`[ai] Fallback reply also failed for lead ${lead._id}`, {
+      error: err.message,
+    });
   }
 }
 
