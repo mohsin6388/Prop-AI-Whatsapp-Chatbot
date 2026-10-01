@@ -176,13 +176,20 @@ async function processTurn(conversationId) {
     : {};
 
   const candidateProperties = await matchProperties({
+    projectName: requirements.projectName,
     city: requirements.city || lead.city,
     location: requirements.location || lead.location,
     budgetMin: requirements.budgetMin ?? lead.budgetMin,
     budgetMax: requirements.budgetMax ?? lead.budgetMax,
     bhk: requirements.bhk,
     propertyType: requirements.propertyType,
+    sizeSqft: requirements.sizeSqft,
     amenities: requirements.amenities,
+    parking: requirements.parking,
+    reraNumber: requirements.reraNumber,
+    nearbyMetro: requirements.nearbyMetro,
+    nearbySchool: requirements.nearbySchool,
+    nearbyHospital: requirements.nearbyHospital,
   });
 
   const referralEnabled = settings.referral?.enabled ?? env.referral.enabled;
