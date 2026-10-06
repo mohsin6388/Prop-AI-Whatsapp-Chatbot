@@ -170,12 +170,19 @@ export default function PropertiesPage() {
 
     if (!file) return;
 
+    const MAX_BROCHURE_SIZE = 10 * 1024 * 1024; // 10 MB
+
     if (
       file.type !== "application/pdf" &&
       !file.name.toLowerCase().endsWith(".pdf")
     ) {
       setBrochureError("Please select a valid PDF brochure.");
+      event.target.value = "";
+      return;
+    }
 
+    if (file.size > MAX_BROCHURE_SIZE) {
+      setBrochureError("Brochure PDF must be 10 MB or smaller.");
       event.target.value = "";
       return;
     }
@@ -193,18 +200,35 @@ export default function PropertiesPage() {
 
     if (!files.length) return;
 
-    if (files.length > 10) {
-      setBrochureError("You can upload maximum 10 property images.");
+    const MAX_IMAGES = 10;
+    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
 
+    if (files.length > MAX_IMAGES) {
+      setBrochureError("You can upload maximum 10 property images.");
       event.target.value = "";
       return;
     }
 
-    const invalidImage = files.find((file) => !file.type.startsWith("image/"));
+    const allowedImageTypes = ["image/jpeg", "image/jpg", "image/png"];
+
+    const invalidImage = files.find(
+      (file) => !allowedImageTypes.includes(file.type),
+    );
 
     if (invalidImage) {
-      setBrochureError("Only image files are allowed.");
+      setBrochureError(
+        `${invalidImage.name} is not supported. Only JPG, JPEG and PNG images are allowed.`,
+      );
+      event.target.value = "";
+      return;
+    }
 
+    const oversizedImage = files.find((file) => file.size > MAX_IMAGE_SIZE);
+
+    if (oversizedImage) {
+      setBrochureError(
+        `${oversizedImage.name} is too large. Each image must be 5 MB or smaller.`,
+      );
       event.target.value = "";
       return;
     }
@@ -565,7 +589,7 @@ export default function PropertiesPage() {
                     </p>
 
                     <p className="mt-1 text-xs text-ink-400">
-                      PDF only, maximum 20 MB
+                      PDF only, maximum 10 MB
                     </p>
                   </div>
 
@@ -599,13 +623,13 @@ export default function PropertiesPage() {
                     </p>
 
                     <p className="mt-1 text-xs text-ink-400">
-                      JPG, PNG, WEBP • Maximum 10 images
+                      JPG, JPEG, PNG • Maximum 10 images • 5 MB each
                     </p>
                   </div>
 
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png"
                     multiple
                     onChange={handleImagesChange}
                     className="hidden"
