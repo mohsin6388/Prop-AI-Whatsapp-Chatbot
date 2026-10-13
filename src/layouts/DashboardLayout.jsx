@@ -15,13 +15,19 @@ import {
   Moon,
   Sun,
   Menu,
+  Mail,
+  MessageCircle,
+  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore.js';
 import { authApi } from '../api/authApi.js';
+import { useOutreachSummaryLive } from '../hooks/useOutreachLive.js';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Users },
+  { to: '/outreach/whatsapp', label: 'WhatsApp Leads', icon: MessageCircle, channel: 'whatsapp' },
+  { to: '/outreach/email', label: 'Email Leads', icon: Mail, channel: 'email' },
   { to: '/properties', label: 'Properties', icon: Building2 },
   { to: '/conversations', label: 'Conversations', icon: MessageSquare },
   { to: '/site-visits', label: 'Site Visits', icon: CalendarCheck },
@@ -32,7 +38,27 @@ const NAV_ITEMS = [
   { to: '/profile', label: 'Profile', icon: UserCircle },
 ];
 
+/** Sidebar badge: "sent/total" + chalte waqt spinner */
+function OutreachBadge({ stats }) {
+  if (!stats || !stats.total) return null;
+  const done = stats.sent === stats.total;
+  return (
+    <span className="ml-auto flex items-center gap-1.5">
+      {stats.processing > 0 && <Loader2 size={13} className="animate-spin" />}
+      <span
+        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+          done ? 'bg-green-500/20 text-green-300' : 'bg-white/10 text-ink-200'
+        }`}
+        title={`${stats.sent} sent, ${stats.pending + stats.paused} pending, ${stats.failed} failed`}
+      >
+        {stats.sent}/{stats.total}
+      </span>
+    </span>
+  );
+}
+
 export default function DashboardLayout() {
+  const { data: outreach } = useOutreachSummaryLive();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
   const { user, clearSession } = useAuthStore();
@@ -62,7 +88,7 @@ export default function DashboardLayout() {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+        {NAV_ITEMS.map(({ to, label, icon: Icon, channel }) => (
           <NavLink
             key={to}
             to={to}
@@ -77,6 +103,7 @@ export default function DashboardLayout() {
           >
             <Icon size={18} />
             {label}
+            {channel && <OutreachBadge stats={outreach?.[channel]} />}
           </NavLink>
         ))}
       </nav>

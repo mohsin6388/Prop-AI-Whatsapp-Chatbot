@@ -4,6 +4,9 @@ import { useAuthStore } from "../store/authStore.js";
 const baseURL = "https://prop-ai-whatsapp-chatbot.onrender.com/api/";
 // const baseURL = "http://localhost:5000/api/";
 
+// Socket.IO bhi isi server se judta hai (lib/socket.js) — ek hi jagah badalna padega
+export const API_BASE_URL = baseURL;
+
 export const api = axios.create({
   baseURL,
   withCredentials: true, // sends the httpOnly refresh cookie

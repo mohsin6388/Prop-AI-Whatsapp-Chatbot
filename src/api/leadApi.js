@@ -15,6 +15,7 @@ export const leadApi = {
       .post('/leads/import/preview', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then((r) => r.data);
   },
+  importParseText: (text) => api.post('/leads/import/parse-text', { text }).then((r) => r.data),
   importConfirm: (rows) => api.post('/leads/import/confirm', { rows }).then((r) => r.data),
   startConversations: (leadIds) => api.post('/leads/start-conversations', { leadIds }).then((r) => r.data),
   exportUrl: () => `${api.defaults.baseURL}/leads/export`,

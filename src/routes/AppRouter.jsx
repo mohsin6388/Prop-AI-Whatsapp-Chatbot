@@ -19,6 +19,7 @@ import FollowUpsPage from '../features/followups/FollowUpsPage.jsx';
 
 
 import LeadsPage from '../features/leads/LeadsPage.jsx';
+import OutreachPage from '../features/outreach/OutreachPage.jsx';
 import PropertiesPage from '../features/properties/PropertiesPage.jsx';
 import WhatsAppPage from '../features/whatsapp/WhatsAppPage.jsx';
 import ConversationsPage from '../features/conversations/ConversationsPage.jsx';
@@ -68,6 +69,8 @@ export default function AppRouter() {
           {/* <Route path="/dashboard" element={<DashboardPage />} /> */}
           <Route path="/dashboard" element={<AnalyticsPage />} />
           <Route path="/leads" element={<LeadsPage />} />
+          <Route path="/outreach/whatsapp" element={<OutreachPage channel="whatsapp" />} />
+          <Route path="/outreach/email" element={<OutreachPage channel="email" />} />
           <Route path="/properties" element={<PropertiesPage />} />
           <Route path="/whatsapp" element={<WhatsAppPage />} />
           <Route path="/conversations" element={<ConversationsPage />} />
